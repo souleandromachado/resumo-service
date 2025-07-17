@@ -1,210 +1,154 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const axios = require('axios');
-require('dotenv').config();
-
+const swaggerUi = require('swagger-ui-express');
+const swaggerDocument = require('./swagger.json');
 const app = express();
+
 app.use(express.json());
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
-const mongoURI = process.env.MONGODB_URI;
-const useDummy = process.env.USE_DUMMY === 'true';
-const openaiKey = process.env.OPENAI_API_KEY;
-
-const questoesCache = {};
-
-// Conectar MongoDB
-mongoose.connect(mongoURI, { useNewUrlParser: true, useUnifiedTopology: true })
-  .then(() => console.log('✅ MongoDB conectado'))
+// MongoDB
+mongoose.connect(process.env.MONGODB_URI, {
+  useNewUrlParser: true, useUnifiedTopology: true,
+}).then(() => console.log('✅ MongoDB conectado'))
   .catch(err => console.error('❌ Erro MongoDB:', err));
 
-// Schema
-const respostaSchema = new mongoose.Schema({
+// Modelo
+const ResultadoSchema = new mongoose.Schema({
   aluno: String,
   tema: String,
-  questaoId: String,
-  respostas: [{
-    numero: Number,
-    resposta: String,
-    correta: String,
-    acertou: Boolean
-  }],
+  resumo: String,
+  perguntas: Array,
+  respostas: Array,
   pontuacao: Number,
-  data: { type: Date, default: Date.now }
+  criadoEm: { type: Date, default: Date.now }
 });
-const Resposta = mongoose.model('Resposta', respostaSchema);
+const Resultado = mongoose.model('Resultado', ResultadoSchema);
 
-// Dummy Generator
-function gerarConteudoDummy(tema) {
-  const resumo = `Este é um resumo simplificado sobre o tema "${tema}".`;
-  const questoes = Array.from({ length: 5 }).map((_, i) => ({
-    pergunta: `Pergunta ${i + 1} sobre o tema "${tema}"`,
-    alternativas: { A: "Alternativa A", B: "Alternativa B", C: "Alternativa C", D: "Alternativa D" },
-    correta: ["A", "B", "C", "D"][i % 4]
-  }));
-  return { resumo, questoes };
-}
+// Dummy
+const dummyResumo = "Resumo sobre o tema solicitado.";
+const dummyQuestoes = [
+  { numero: 1, pergunta: "Pergunta 1?", opcoes: ["A", "B", "C", "D"], correta: "A" },
+  { numero: 2, pergunta: "Pergunta 2?", opcoes: ["A", "B", "C", "D"], correta: "B" },
+  { numero: 3, pergunta: "Pergunta 3?", opcoes: ["A", "B", "C", "D"], correta: "C" },
+  { numero: 4, pergunta: "Pergunta 4?", opcoes: ["A", "B", "C", "D"], correta: "D" },
+  { numero: 5, pergunta: "Pergunta 5?", opcoes: ["A", "B", "C", "D"], correta: "A" }
+];
 
-// Função para chamar o ChatGPT com retry para erro 429
-async function gerarConteudoReal(tema, tentativas = 5, delay = 2000) {
-  const prompt = `
-Resuma brevemente o tema "${tema}" e crie 5 questões de múltipla escolha com 4 alternativas cada (A, B, C, D) e indique a alternativa correta. Retorne no formato JSON:
-{
-  "resumo": "...",
-  "questoes": [
-    {
-      "pergunta": "...",
-      "alternativas": { "A": "...", "B": "...", "C": "...", "D": "..." },
-      "correta": "A"
-    }, ...
-  ]
-}
-`.trim();
+const usarDummy = process.env.USE_DUMMY_DATA === 'true';
 
-  for (let tentativa = 1; tentativa <= tentativas; tentativa++) {
+// ChatGPT com tratamento de erro 429
+const chatGPT = async (prompt) => {
+  const apiKey = process.env.OPENAI_API_KEY;
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+  const data = {
+    model: "gpt-4",
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.7,
+  };
+
+  let tentativa = 0;
+  while (tentativa < 5) {
     try {
-      const response = await axios.post(
-        'https://api.openai.com/v1/chat/completions',
-        {
-          model: 'gpt-3.5-turbo',
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.7
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${openaiKey}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-
-      const content = response.data.choices[0].message.content;
-      const json = JSON.parse(content);
-      return json;
-
+      const res = await axios.post('https://api.openai.com/v1/chat/completions', data, { headers });
+      return res.data.choices[0].message.content;
     } catch (err) {
       if (err.response?.status === 429) {
-        console.warn(`⚠️ Rate limit atingido, tentativa ${tentativa}/${tentativas}...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      } else if (err.response?.status === 401) {
-        throw new Error('❌ Chave da OpenAI inválida (401)');
+        console.warn(`⚠️ Rate limit atingido, tentando de novo em 2000ms...`);
+        await new Promise(r => setTimeout(r, 2000));
+        tentativa++;
       } else {
         throw err;
       }
     }
   }
+  throw new Error("Máximo de tentativas atingido por erro 429");
+};
 
-  throw new Error('❌ Máximo de tentativas atingido por erro 429');
-}
-
-// POST /resumo
+// Gera resumo + questões
 app.post('/resumo', async (req, res) => {
   const { tema } = req.body;
   if (!tema) return res.status(400).json({ erro: 'Tema é obrigatório' });
 
   try {
-    let resumo, questoes;
-
-    if (useDummy) {
-      console.log('⚙️  Modo dummy ativado');
-      ({ resumo, questoes } = gerarConteudoDummy(tema));
+    let resumo, perguntas;
+    if (usarDummy) {
+      resumo = dummyResumo;
+      perguntas = dummyQuestoes;
     } else {
-      const resultado = await gerarConteudoReal(tema);
-      resumo = resultado.resumo;
-      questoes = resultado.questoes;
+      const resposta = await chatGPT(`Crie um resumo curto e 5 perguntas de múltipla escolha com respostas certas sobre: ${tema}`);
+      const [r, ...qs] = resposta.split("\n").filter(Boolean);
+      resumo = r;
+      perguntas = qs.map((q, i) => ({
+        numero: i + 1,
+        pergunta: q,
+        opcoes: ["A", "B", "C", "D"],
+        correta: "A"
+      }));
     }
 
-    const id = Math.random().toString(36).substring(2, 10);
-    questoesCache[id] = { tema, questoes };
-
-    res.json({
-      id,
-      resumo,
-      questoes: questoes.map((q, i) => ({
-        numero: i + 1,
-        pergunta: q.pergunta,
-        alternativas: q.alternativas
-      }))
-    });
-  } catch (err) {
-    console.error(err);
+    const resultado = new Resultado({ aluno: null, tema, resumo, perguntas });
+    await resultado.save();
+    res.json({ id: resultado._id, resumo, perguntas });
+  } catch (e) {
+    console.error('❌ Erro:', e.message);
     res.status(500).json({ erro: 'Erro ao gerar conteúdo' });
   }
 });
 
-// POST /teste
+// Submete respostas
 app.post('/teste', async (req, res) => {
   const { aluno, questaoId, respostas } = req.body;
-  if (!aluno || !questaoId || !Array.isArray(respostas)) {
-    return res.status(400).json({ erro: 'Campos obrigatórios: aluno, questaoId, respostas[]' });
-  }
-
-  const registro = questoesCache[questaoId];
-  if (!registro) return res.status(404).json({ erro: 'ID de questões não encontrado' });
-
-  const { questoes, tema } = registro;
-
-  let acertos = 0;
-  const avaliacoes = respostas.map(r => {
-    const q = questoes[r.numero - 1];
-    const correta = q.correta.toUpperCase();
-    const respostaUser = (r.resposta || '').toUpperCase();
-    const acertou = respostaUser === correta;
-    if (acertou) acertos++;
-    return { numero: r.numero, resposta: respostaUser, correta, acertou };
-  });
+  if (!aluno || !questaoId || !respostas)
+    return res.status(400).json({ erro: 'Campos obrigatórios ausentes' });
 
   try {
-    const respostaAluno = new Resposta({
+    const quiz = await Resultado.findById(questaoId);
+    if (!quiz) return res.status(404).json({ erro: 'ID de questões não encontrado' });
+
+    const corretas = quiz.perguntas;
+    let acertos = 0;
+    for (const resp of respostas) {
+      const correta = corretas.find(q => q.numero === resp.numero);
+      if (correta && correta.correta === resp.resposta) acertos++;
+    }
+
+    const novoResultado = new Resultado({
       aluno,
-      tema,
-      questaoId,
-      respostas: avaliacoes,
+      tema: quiz.tema,
+      resumo: quiz.resumo,
+      perguntas: quiz.perguntas,
+      respostas,
       pontuacao: acertos
     });
+    await novoResultado.save();
 
-    await respostaAluno.save();
-
-    res.json({
-      aluno,
-      tema,
-      pontuacao: acertos,
-      total: questoes.length,
-      respostas: avaliacoes
-    });
-  } catch (err) {
-    console.error('Erro ao salvar no MongoDB:', err);
-    res.status(500).json({ erro: 'Erro ao salvar o resultado no banco de dados' });
+    res.json({ pontuacao: acertos, total: corretas.length });
+  } catch (e) {
+    console.error('❌ Erro:', e.message);
+    res.status(500).json({ erro: 'Erro ao salvar o resultado' });
   }
 });
 
-// GET /historico/:aluno
+// Histórico por aluno
 app.get('/historico/:aluno', async (req, res) => {
-  const { aluno } = req.params;
   try {
-    const historico = await Resposta.find({ aluno }).sort({ data: -1 });
-    if (!historico.length) {
-      return res.status(404).json({ mensagem: 'Nenhum histórico encontrado para este aluno' });
-    }
+    const resultados = await Resultado.find({ aluno: req.params.aluno });
+    if (resultados.length === 0)
+      return res.status(404).json({ erro: 'Nenhum histórico encontrado' });
 
-    const retorno = historico.map(r => ({
-      tema: r.tema,
-      data: r.data,
-      pontuacao: r.pontuacao,
-      total: r.respostas.length,
-      respostas: r.respostas
-    }));
-
-    res.json({ aluno, historico: retorno });
-  } catch (err) {
-    console.error(err);
+    res.json(resultados);
+  } catch (e) {
+    console.error('❌ Erro:', e.message);
     res.status(500).json({ erro: 'Erro ao consultar histórico' });
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 API rodando em http://localhost:${PORT}`);
-  if (useDummy) {
-    console.log('⚙️  Modo dummy ativado');
-  }
+app.listen(3000, () => {
+  console.log('🚀 API rodando em http://localhost:3000');
 });
