@@ -1,164 +1,84 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Quiz GPT API",
+    "title": "Resumo API",
     "version": "1.0.0",
-    "description": "API para gerar resumo e perguntas com ChatGPT e armazenar histórico de quizzes de alunos."
+    "description": "API para geração de resumos e perguntas com avaliação"
   },
-  "servers": [
-    {
-      "url": "http://localhost:3000"
-    }
-  ],
   "paths": {
     "/resumo": {
       "post": {
         "summary": "Gerar resumo e perguntas",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "tema": {
-                    "type": "string",
-                    "example": "Revolução Francesa"
-                  }
-                },
-                "required": ["tema"]
-              }
-            }
-          }
-        },
         "responses": {
           "200": {
-            "description": "Resumo e perguntas gerados com sucesso",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "id": { "type": "string" },
-                    "resumo": { "type": "string" },
-                    "perguntas": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "numero": { "type": "integer" },
-                          "pergunta": { "type": "string" },
-                          "opcoes": {
-                            "type": "array",
-                            "items": { "type": "string" }
-                          },
-                          "correta": { "type": "string" }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Tema não informado" },
-          "500": { "description": "Erro ao gerar conteúdo" }
+            "description": "Resumo e perguntas gerados com sucesso"
+          }
         }
       }
     },
-    "/teste": {
-      "post": {
-        "summary": "Enviar respostas do quiz",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "aluno": { "type": "string", "example": "joao123" },
-                  "questaoId": { "type": "string" },
-                  "respostas": {
-                    "type": "array",
-                    "items": {
-                      "type": "object",
-                      "properties": {
-                        "numero": { "type": "integer" },
-                        "resposta": { "type": "string" }
-                      }
-                    }
-                  }
-                },
-                "required": ["aluno", "questaoId", "respostas"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Respostas validadas",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "pontuacao": { "type": "integer" },
-                    "total": { "type": "integer" }
-                  }
-                }
-              }
-            }
-          },
-          "400": { "description": "Dados incompletos" },
-          "404": { "description": "Quiz não encontrado" },
-          "500": { "description": "Erro interno" }
-        }
-      }
-    },
-    "/historico/{aluno}": {
+    "/resumos": {
       "get": {
-        "summary": "Consultar histórico de quizzes por aluno",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "aluno",
-            "required": true,
-            "schema": { "type": "string" }
-          }
-        ],
+        "summary": "Listar todos os resumos",
         "responses": {
           "200": {
-            "description": "Histórico encontrado",
+            "description": "Lista de resumos",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "properties": {
-                      "aluno": { "type": "string" },
-                      "tema": { "type": "string" },
-                      "resumo": { "type": "string" },
-                      "pontuacao": { "type": "integer" },
-                      "respostas": {
-                        "type": "array",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "numero": { "type": "integer" },
-                            "resposta": { "type": "string" }
-                          }
-                        }
-                      },
-                      "criadoEm": { "type": "string", "format": "date-time" }
-                    }
+                    "$ref": "#/components/schemas/Resumo"
                   }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/resumos/{id}": {
+      "put": {
+        "summary": "Editar resumo",
+        "responses": {
+          "200": {
+            "description": "Resumo editado com sucesso"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Deletar resumo",
+        "responses": {
+          "200": {
+            "description": "Resumo deletado com sucesso"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Resumo": {
+        "type": "object",
+        "properties": {
+          "_id": {
+            "type": "string"
           },
-          "404": { "description": "Nenhum histórico encontrado" },
-          "500": { "description": "Erro interno" }
+          "tema": {
+            "type": "string"
+          },
+          "resumo": {
+            "type": "string"
+          },
+          "perguntas": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "criadoEm": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     }
