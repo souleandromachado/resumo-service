@@ -60,13 +60,14 @@ app.post('/resumos', async (req, res) => {
   if (!tema) return res.status(400).json({ erro: 'Tema é obrigatório' });
 
   try {
-    let resumos, perguntas;
+    let resumo, perguntas;
     if (usarDummy) {
+      resumo = dummyResumo;
       perguntas = dummyQuestoes;
     } else {
       const resposta = await chatGPT(`Crie um resumo curto e 5 perguntas de múltipla escolha com respostas certas sobre: ${tema}`);
       const [r, ...qs] = resposta.split("\n").filter(Boolean);
-      resumos = r;
+      resumo = r;
       perguntas = qs.map((q, i) => ({
         numero: i + 1,
         pergunta: q,
@@ -75,16 +76,15 @@ app.post('/resumos', async (req, res) => {
       }));
     }
 
-    const resumoCriado = new Resumo({ tema, resumos, perguntas });
+    const resumoCriado = new Resumo({ tema, resumo, perguntas });
     await resumoCriado.save();
 
-    res.json({ id: resumoCriado._id, resumos, perguntas });
+    res.json({ id: resumoCriado._id, resumo, perguntas });
   } catch (e) {
     console.error('❌ Erro:', e.message);
     res.status(500).json({ erro: 'Erro ao gerar conteúdo' });
   }
 });
-
 // Rotas CRUD de Resumos
 app.get('/resumos', async (req, res) => {
   try {

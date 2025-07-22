@@ -27,7 +27,14 @@
         },
         "responses": {
           "200": {
-            "description": "Resumo e perguntas gerados com sucesso"
+            "description": "Resumo e perguntas gerados com sucesso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resumo"
+                }
+              }
+            }
           },
           "400": {
             "description": "Tema não informado"
@@ -124,32 +131,21 @@
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "properties": {
-                  "aluno": { "type": "string" },
-                  "tema": { "type": "string" },
-                  "resumo": { "type": "string" },
-                  "perguntas": {
-                    "type": "array",
-                    "items": {
-                      "type": "object"
-                    }
-                  },
-                  "respostas": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                },
-                "required": ["aluno", "tema", "resumo", "perguntas", "respostas"]
+                "$ref": "#/components/schemas/Resultado"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Resultado salvo e pontuação retornada"
+            "description": "Resultado salvo e pontuação retornada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultado"
+                }
+              }
+            }
           },
           "400": {
             "description": "Dados inválidos"
@@ -163,6 +159,18 @@
   },
   "components": {
     "schemas": {
+      "Pergunta": {
+        "type": "object",
+        "properties": {
+          "numero": { "type": "integer" },
+          "pergunta": { "type": "string" },
+          "opcoes": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "correta": { "type": "string" }
+        }
+      },
       "Resumo": {
         "type": "object",
         "properties": {
@@ -171,24 +179,35 @@
           "resumo": { "type": "string" },
           "perguntas": {
             "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "numero": { "type": "integer" },
-                "pergunta": { "type": "string" },
-                "opcoes": {
-                  "type": "array",
-                  "items": { "type": "string" }
-                },
-                "correta": { "type": "string" }
-              }
-            }
+            "items": { "$ref": "#/components/schemas/Pergunta" }
           },
           "criadoEm": {
             "type": "string",
             "format": "date-time"
           }
         }
+      },
+      "Resultado": {
+        "type": "object",
+        "properties": {
+          "aluno": { "type": "string" },
+          "tema": { "type": "string" },
+          "resumo": { "type": "string" },
+          "perguntas": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Pergunta" }
+          },
+          "respostas": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "pontuacao": { "type": "number" },
+          "criadoEm": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["aluno", "tema", "resumo", "perguntas", "respostas"]
       }
     }
   }
